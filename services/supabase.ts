@@ -1,16 +1,32 @@
 import { createClient } from '@supabase/supabase-js';
 import { Character, NenType } from '../types';
 
-const env = (import.meta as any).env || {};
+// Safely get environment variables
+const getEnv = () => {
+    try {
+        return (import.meta as any).env || {};
+    } catch {
+        return {};
+    }
+};
+
+const env = getEnv();
 
 // Use Environment variables if available, otherwise use the provided hardcoded keys
 const supabaseUrl = env.VITE_SUPABASE_URL || 'https://cdxdpjodsyknyaojjbig.supabase.co';
 const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNkeGRwam9kc3lrbnlhb2pqYmlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc0MTEwNjEsImV4cCI6MjA4Mjk4NzA2MX0.jus2sDdvS41bV4o4JTio3ph4AkmuX4asui-U3SbvIqU';
 
-// Initialize the client
-export const supabase = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
+// Initialize the client safely
+let client = null;
+try {
+    if (supabaseUrl && supabaseAnonKey) {
+        client = createClient(supabaseUrl, supabaseAnonKey);
+    }
+} catch (e) {
+    console.error("Failed to initialize Supabase client", e);
+}
+
+export const supabase = client;
 
 export const isSupabaseConfigured = () => {
   return !!supabase;
@@ -66,24 +82,29 @@ export const fetchCharacters = async (): Promise<Character[]> => {
     return [INITIAL_CHARACTER];
   }
 
-  const { data, error } = await supabase
-    .from('characters')
-    .select('*')
-    .order('updated_at', { ascending: false });
+  try {
+      const { data, error } = await supabase
+        .from('characters')
+        .select('*')
+        .order('updated_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching characters:', error);
-    return [INITIAL_CHARACTER];
-  }
+      if (error) {
+        console.error('Error fetching characters:', error);
+        return [INITIAL_CHARACTER];
+      }
 
-  if (!data || data.length === 0) {
+      if (!data || data.length === 0) {
+          return [INITIAL_CHARACTER];
+      }
+
+      return data.map((row: any) => ({
+        ...row.data,
+        id: row.id
+      }));
+  } catch (err) {
+      console.error("Critical error fetching characters:", err);
       return [INITIAL_CHARACTER];
   }
-
-  return data.map((row: any) => ({
-    ...row.data,
-    id: row.id
-  }));
 };
 
 export const saveCharacter = async (character: Character): Promise<void> => {

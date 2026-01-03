@@ -68,7 +68,7 @@ const resizeImage = (file: File, maxWidth = 800): Promise<string> => {
 
 const App: React.FC = () => {
     const [characters, setCharacters] = useState<Character[]>([INITIAL_CHARACTER]);
-    const [activeCharId, setActiveCharId] = useState<string>(characters[0]?.id);
+    const [activeCharId, setActiveCharId] = useState<string>(INITIAL_CHARACTER.id);
     const [loading, setLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -88,7 +88,7 @@ const App: React.FC = () => {
         const load = async () => {
             try {
                 if (!isSupabaseConfigured()) {
-                    addLog('System', 'Offline', 'Supabase not configured.', 'fail');
+                    addLog('System', 'Offline', 'Supabase not configured. Using local mode.', 'fail');
                     setLoading(false);
                     return;
                 }
@@ -96,10 +96,14 @@ const App: React.FC = () => {
                 if (data && data.length > 0) {
                     setCharacters(data);
                     setActiveCharId(data[0].id);
+                } else {
+                    setCharacters([INITIAL_CHARACTER]);
+                    setActiveCharId(INITIAL_CHARACTER.id);
                 }
             } catch (error) {
                 console.error(error);
-                addLog('System', 'Error', 'Failed to load characters', 'fail');
+                addLog('System', 'Error', 'Failed to load characters. Using local mode.', 'fail');
+                setCharacters([INITIAL_CHARACTER]);
             } finally {
                 setLoading(false);
             }
@@ -107,7 +111,8 @@ const App: React.FC = () => {
         load();
     }, []);
 
-    const char = characters.find(c => c.id === activeCharId) || characters[0];
+    // Safety fallback
+    const char = characters.find(c => c.id === activeCharId) || characters[0] || INITIAL_CHARACTER;
     const themeColor = char ? (NEN_COLORS[char.nenType] || '#9b59b6') : '#9b59b6';
     const equippedWeapon = char.equippedWeapon || { name: 'Desarmado', damage: '1d4', description: '', powers: '', imageUrl: '' };
     const attrLabels = char.attributeLabels || {};
@@ -164,7 +169,7 @@ const App: React.FC = () => {
                 return { ...c, equippedWeapon: { ...c.equippedWeapon, [idOrKey]: newData } };
             }
             // Arrays
-            const list = c[collection] as any[];
+            const list = (c[collection] || []) as any[];
             const updatedList = list.map(item => item.id === idOrKey ? { ...item, ...newData } : item);
             return { ...c, [collection]: updatedList };
         }));
@@ -177,18 +182,18 @@ const App: React.FC = () => {
         if (type === 'skill') {
            const category = activeTab === 'hatsus' ? 'Hatsu' : activeTab === 'combat' ? 'Combat' : 'Weapon';
            const newSkill: Skill = { id, name: 'Nova Habilidade', category, type: 'Ativa', cost: 0, costType: 'Nen', damageDice: '1d6', description: '...', imageUrl: '' };
-           updateChar('skills', [...char.skills, newSkill]);
+           updateChar('skills', [...(char.skills || []), newSkill]);
         }
         if (type === 'item') {
-           updateChar('inventory', [...char.inventory, { id, name: 'Item', quantity: 1 }]);
+           updateChar('inventory', [...(char.inventory || []), { id, name: 'Item', quantity: 1 }]);
         }
         if (type === 'summon') {
             const newSummon = { id, name: 'Nova Invocação', avatarUrl: '', type: 'Besta de Nen', currentHp: 10, maxHp: 10, currentNen: 5, maxNen: 5, attributes: { strength: 0, constitution: 0, intelligence: 0, charisma: 0, determination: 0, prestidigitation: 0 }, description: '...', skills: [] };
-            updateChar('summons', [...char.summons, newSummon]);
+            updateChar('summons', [...(char.summons || []), newSummon]);
         }
         if (type === 'summonSkill' && parentId) {
            const newSkill: Skill = { id, name: 'Nova Habilidade', category: 'Summon', type: 'Ativa', cost: 1, costType: 'Nen', damage: '1d4', description: '...' };
-           const newSummons = char.summons.map(s => s.id === parentId ? { ...s, skills: [...(s.skills || []), newSkill] } : s);
+           const newSummons = (char.summons || []).map(s => s.id === parentId ? { ...s, skills: [...(s.skills || []), newSkill] } : s);
            updateChar('summons', newSummons);
         }
     }
@@ -196,11 +201,13 @@ const App: React.FC = () => {
     const deleteItem = (collection: string, id: string, parentId?: string) => {
         if(!confirm("Remover item?")) return;
         if (collection === 'summonSkill' && parentId) {
-            const newSummons = char.summons.map(s => s.id === parentId ? { ...s, skills: s.skills.filter(k => k.id !== id) } : s);
+            const newSummons = (char.summons || []).map(s => s.id === parentId ? { ...s, skills: s.skills.filter(k => k.id !== id) } : s);
             updateChar('summons', newSummons);
         } else {
             // @ts-ignore dynamic access
-            updateChar(collection, char[collection].filter(i => i.id !== id));
+            const list = char[collection] || [];
+            // @ts-ignore
+            updateChar(collection, list.filter(i => i.id !== id));
         }
    }
 
@@ -245,7 +252,7 @@ const App: React.FC = () => {
        if (type === 'char') {
            updateChar(field as any, newValue);
        } else if (type === 'summon') {
-            const newSummons = char.summons.map(s => s.id === id ? {...s, [field]: newValue} : s);
+            const newSummons = (char.summons || []).map(s => s.id === id ? {...s, [field]: newValue} : s);
             updateChar('summons', newSummons);
        }
     };
@@ -267,7 +274,10 @@ const App: React.FC = () => {
         setUploadTarget(null);
     };
 
-    if (loading) return <div className="h-screen w-full flex items-center justify-center bg-black text-theme font-tech animate-pulse">BOOTING SYSTEM...</div>;
+    if (loading) return <div className="h-screen w-full flex items-center justify-center bg-black text-white font-tech animate-pulse">BOOTING SYSTEM...</div>;
+    
+    // Safety check if render somehow receives no char
+    if (!char) return <div className="h-screen flex items-center justify-center text-white">Character Load Error</div>;
 
     return (
         <div className={`min-h-screen relative text-gray-200 font-body ${isEditing ? 'edit-mode' : ''}`} style={{ '--theme-color': themeColor } as React.CSSProperties}>
@@ -410,8 +420,8 @@ const App: React.FC = () => {
                                         <span className="text-[10px] font-tech text-gray-500 uppercase tracking-widest flex items-center gap-2"><AlertCircle size={12}/> Status Atuais</span>
                                         {isEditing && (
                                             <div className="flex items-center gap-1 relative z-20">
-                                                <input value={conditionInput} onChange={e => setConditionInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && conditionInput) { updateChar('conditions', [...char.conditions, conditionInput]); setConditionInput(""); }}} placeholder="Add..." className="bg-black/50 border border-white/10 text-[10px] text-white px-2 py-1 w-20 outline-none rounded"/>
-                                                <button onClick={() => { if(conditionInput) { updateChar('conditions', [...char.conditions, conditionInput]); setConditionInput(""); }}} className="bg-theme text-[10px] text-white px-2 py-1 rounded hover:bg-white hover:text-black transition-colors font-bold">+</button>
+                                                <input value={conditionInput} onChange={e => setConditionInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && conditionInput) { updateChar('conditions', [...(char.conditions || []), conditionInput]); setConditionInput(""); }}} placeholder="Add..." className="bg-black/50 border border-white/10 text-[10px] text-white px-2 py-1 w-20 outline-none rounded"/>
+                                                <button onClick={() => { if(conditionInput) { updateChar('conditions', [...(char.conditions || []), conditionInput]); setConditionInput(""); }}} className="bg-theme text-[10px] text-white px-2 py-1 rounded hover:bg-white hover:text-black transition-colors font-bold">+</button>
                                             </div>
                                         )}
                                     </div>
@@ -419,7 +429,7 @@ const App: React.FC = () => {
                                         {(char.conditions || []).map((cond, idx) => (
                                             <span key={idx} className="text-[10px] font-bold px-3 py-1 bg-red-500/10 text-red-200 border border-red-500/20 rounded-full flex items-center gap-2">
                                                 {cond}
-                                                {isEditing && <button onClick={() => updateChar('conditions', char.conditions.filter((_, i) => i !== idx))} className="hover:text-white"><X size={10}/></button>}
+                                                {isEditing && <button onClick={() => updateChar('conditions', (char.conditions || []).filter((_, i) => i !== idx))} className="hover:text-white"><X size={10}/></button>}
                                             </span>
                                         ))}
                                     </div>
@@ -522,7 +532,7 @@ const App: React.FC = () => {
                             {/* Skills (Hatsus, Combat, Weapon techniques) */}
                             {['hatsus', 'combat', 'weapon'].includes(activeTab) && (
                                 <div className="space-y-6">
-                                    {char.skills.filter(s => s.category.toLowerCase() === (activeTab === 'hatsus' ? 'hatsu' : activeTab)).map(skill => (
+                                    {(char.skills || []).filter(s => s.category.toLowerCase() === (activeTab === 'hatsus' ? 'hatsu' : activeTab)).map(skill => (
                                         <div key={skill.id} className="border border-white/5 bg-[#131316] group hover:bg-[#18181c] transition-all relative overflow-hidden flex flex-col md:flex-row rounded-sm shadow-md hover:shadow-xl hover:translate-x-1 duration-300 hover:border-theme/30">
                                             <div className="w-full md:w-48 h-48 bg-black/40 relative flex-shrink-0 border-r border-white/5 group-hover:border-white/10 transition-colors">
                                                 {skill.imageUrl ? <img src={skill.imageUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"/> : <div className="w-full h-full flex items-center justify-center text-white/5"><Hexagon size={60}/></div>}
@@ -577,7 +587,7 @@ const App: React.FC = () => {
                              {/* Inventory */}
                              {activeTab === 'inventory' && (
                                 <div className="grid grid-cols-1 gap-1">
-                                    {char.inventory.map(item => (
+                                    {(char.inventory || []).map(item => (
                                         <div key={item.id} className="flex justify-between items-center p-4 bg-[#131316] border-l-2 border-transparent hover:border-theme transition-all group relative z-10 hover:bg-white/5">
                                             <div className="flex items-center gap-4 flex-1">
                                                 <div className="p-2 bg-black/30 rounded text-gray-500 group-hover:text-white transition-colors"><Box size={18}/></div>
@@ -601,7 +611,7 @@ const App: React.FC = () => {
                                             <Plus size={18} className="group-hover:scale-110 transition-transform"/> Criar Nova Besta de Nen
                                         </button>
                                     )}
-                                    {char.summons.map(summon => (
+                                    {(char.summons || []).map(summon => (
                                         <div key={summon.id} className="border border-white/5 bg-black/20 overflow-hidden group rounded-sm shadow-xl relative z-10 hover:border-theme/30 transition-all">
                                             <div className="flex flex-col md:flex-row border-b border-white/5">
                                                 <div className="w-full md:w-56 h-56 bg-black/40 relative flex-shrink-0 border-r border-white/10">
@@ -615,24 +625,24 @@ const App: React.FC = () => {
                                                 <div className="p-6 flex-1 flex flex-col justify-center">
                                                     <div className="flex justify-between items-start mb-4">
                                                         <div className="flex-1">
-                                                            {isEditing ? <input value={summon.name} onChange={e => { const updated = char.summons.map(s => s.id === summon.id ? {...s, name: e.target.value} : s); updateChar('summons', updated); }} className="bg-transparent border-b border-white/20 text-3xl font-title text-white w-full"/> : <h4 className="font-bold text-white text-3xl font-title tracking-wide text-glow">{summon.name}</h4>}
-                                                            {isEditing ? <input value={summon.type} onChange={e => { const updated = char.summons.map(s => s.id === summon.id ? {...s, type: e.target.value} : s); updateChar('summons', updated); }} className="bg-black/30 border border-white/10 text-xs text-gray-400 w-full mt-2 p-1 uppercase"/> : <span className="text-xs uppercase font-bold text-gray-500 mt-2 block tracking-[0.2em]">{summon.type}</span>}
+                                                            {isEditing ? <input value={summon.name} onChange={e => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, name: e.target.value} : s); updateChar('summons', updated); }} className="bg-transparent border-b border-white/20 text-3xl font-title text-white w-full"/> : <h4 className="font-bold text-white text-3xl font-title tracking-wide text-glow">{summon.name}</h4>}
+                                                            {isEditing ? <input value={summon.type} onChange={e => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, type: e.target.value} : s); updateChar('summons', updated); }} className="bg-black/30 border border-white/10 text-xs text-gray-400 w-full mt-2 p-1 uppercase"/> : <span className="text-xs uppercase font-bold text-gray-500 mt-2 block tracking-[0.2em]">{summon.type}</span>}
                                                         </div>
                                                         {isEditing && <button onClick={() => deleteItem('summons', summon.id)} className="text-red-500 hover:text-white p-2 bg-white/5 rounded z-20 relative"><Trash2 size={20}/></button>}
                                                     </div>
-                                                    {isEditing ? <textarea value={summon.description} onChange={e => { const updated = char.summons.map(s => s.id === summon.id ? {...s, description: e.target.value} : s); updateChar('summons', updated); }} className="w-full h-24 bg-black/30 text-xs text-gray-400 p-3 border border-white/10 resize-y rounded"/> : <p className="text-sm text-gray-400 italic leading-relaxed border-l-2 border-white/10 pl-4 whitespace-pre-wrap break-words">{summon.description}</p>}
+                                                    {isEditing ? <textarea value={summon.description} onChange={e => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, description: e.target.value} : s); updateChar('summons', updated); }} className="w-full h-24 bg-black/30 text-xs text-gray-400 p-3 border border-white/10 resize-y rounded"/> : <p className="text-sm text-gray-400 italic leading-relaxed border-l-2 border-white/10 pl-4 whitespace-pre-wrap break-words">{summon.description}</p>}
                                                 </div>
                                             </div>
                                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 bg-black/40 border-b border-white/5">
                                                 <div className="flex flex-col justify-center gap-2">
                                                     <StatBar label="HP" current={summon.currentHp} max={summon.maxHp} color="#ef4444" icon={<Heart size={12}/>} isEditing={isEditing}
-                                                        onChange={v => { const updated = char.summons.map(s => s.id === summon.id ? {...s, currentHp: v} : s); updateChar('summons', updated); }}
-                                                        onMaxChange={v => { const updated = char.summons.map(s => s.id === summon.id ? {...s, maxHp: v} : s); updateChar('summons', updated); }}
+                                                        onChange={v => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, currentHp: v} : s); updateChar('summons', updated); }}
+                                                        onMaxChange={v => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, maxHp: v} : s); updateChar('summons', updated); }}
                                                         onOpenCalculator={() => handleOpenCalculator('summon', summon.id, 'currentHp', `HP (${summon.name})`, summon.currentHp, summon.maxHp)}
                                                     />
                                                     <StatBar label="Nen" current={summon.currentNen} max={summon.maxNen} color={themeColor} icon={<Zap size={12}/>} isEditing={isEditing}
-                                                            onChange={v => { const updated = char.summons.map(s => s.id === summon.id ? {...s, currentNen: v} : s); updateChar('summons', updated); }}
-                                                            onMaxChange={v => { const updated = char.summons.map(s => s.id === summon.id ? {...s, maxNen: v} : s); updateChar('summons', updated); }}
+                                                            onChange={v => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, currentNen: v} : s); updateChar('summons', updated); }}
+                                                            onMaxChange={v => { const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, maxNen: v} : s); updateChar('summons', updated); }}
                                                             onOpenCalculator={() => handleOpenCalculator('summon', summon.id, 'currentNen', `Nen (${summon.name})`, summon.currentNen, summon.maxNen)}
                                                     />
                                                 </div>
@@ -645,7 +655,7 @@ const App: React.FC = () => {
                                                             {Object.entries(summon.attributes).map(([key, val]) => (
                                                                 <div key={key} className="flex flex-col items-center bg-white/10 p-2 rounded w-16">
                                                                     <span className="text-[9px] uppercase mb-1 text-gray-400 font-bold">{key.substring(0,3)}</span>
-                                                                    <input type="number" value={val} onChange={e => { const newAttrs = {...summon.attributes, [key]: parseInt(e.target.value) || 0}; const updated = char.summons.map(s => s.id === summon.id ? {...s, attributes: newAttrs} : s); updateChar('summons', updated); }} className="w-full bg-transparent text-center text-white text-sm font-bold"/>
+                                                                    <input type="number" value={val} onChange={e => { const newAttrs = {...summon.attributes, [key]: parseInt(e.target.value) || 0}; const updated = (char.summons || []).map(s => s.id === summon.id ? {...s, attributes: newAttrs} : s); updateChar('summons', updated); }} className="w-full bg-transparent text-center text-white text-sm font-bold"/>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -664,7 +674,7 @@ const App: React.FC = () => {
                                                                 <div className="flex items-center gap-3 flex-1">
                                                                     {isEditing ? <input value={skill.name} onChange={e => {
                                                                         const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, name: e.target.value} : s);
-                                                                        const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                        const newSummons = (char.summons || []).map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
                                                                         updateChar('summons', newSummons);
                                                                     }} className="bg-transparent border-b border-white/20 text-sm font-bold text-white w-full"/> : <span className="text-sm font-bold text-white cursor-pointer hover:text-theme transition-colors" onClick={() => handleRollSkill(skill, summon.name)}>{skill.name}</span>}
                                                                 </div>
@@ -673,12 +683,12 @@ const App: React.FC = () => {
                                                                             <div className="flex items-center gap-2">
                                                                             <input type="number" value={skill.cost} onChange={e => {
                                                                                 const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, cost: parseInt(e.target.value)} : s);
-                                                                                const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                                const newSummons = (char.summons || []).map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
                                                                                 updateChar('summons', newSummons);
                                                                             }} className="w-10 text-xs bg-white/10 text-center p-1 rounded"/>
                                                                             <select value={skill.costType || 'Nen'} onChange={e => {
                                                                                 const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, costType: e.target.value} : s);
-                                                                                const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                                const newSummons = (char.summons || []).map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
                                                                                 updateChar('summons', newSummons);
                                                                             }} className="text-xs bg-black text-gray-400 p-1 rounded uppercase"><option value="Nen">AP</option><option value="HP">HP</option></select>
                                                                             </div>
@@ -688,7 +698,7 @@ const App: React.FC = () => {
                                                                     
                                                                     {isEditing ? <input value={skill.damage} onChange={e => {
                                                                         const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, damage: e.target.value} : s);
-                                                                        const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                        const newSummons = (char.summons || []).map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
                                                                         updateChar('summons', newSummons);
                                                                     }} className="w-16 text-xs bg-red-900/30 text-red-200 text-center p-1 rounded" placeholder="Dano"/> : 
                                                                     (skill.damage && <button onClick={() => handleRollSkill(skill, summon.name)} className="text-[10px] text-red-300 flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded transition-colors relative z-20"><Dice5 size={12}/> {skill.damage}</button>)}
@@ -699,9 +709,9 @@ const App: React.FC = () => {
                                                             <div className="text-xs text-gray-400 border-l-2 border-white/10 pl-3">
                                                                     {isEditing ? <textarea value={skill.description} onChange={e => {
                                                                     const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, description: e.target.value} : s);
-                                                                    const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                    const newSummons = (char.summons || []).map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
                                                                     updateChar('summons', newSummons);
-                                                                }} className="w-full bg-transparent text-gray-400 h-16 resize-y"/> : <span className="break-words whitespace-pre-wrap">{skill.description}</span>}
+                                                                }} className="w-full bg-transparent text-gray-400 h-16 resize-y custom-scrollbar overflow-y-auto"/> : <span className="break-words whitespace-pre-wrap">{skill.description}</span>}
                                                             </div>
                                                         </div>
                                                     ))}
@@ -757,7 +767,7 @@ const App: React.FC = () => {
                                         <div key={log.id} className="flex gap-3 animate-fade-in border-l-2 border-transparent hover:border-theme transition-colors py-1 hover:bg-white/5 px-2 rounded-r group">
                                             <span className="text-gray-600 text-[10px] self-center w-12 text-right opacity-50">[{log.time.toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit'})}]</span>
                                             <div className="flex-1 flex gap-2 items-baseline">
-                                                <span className={`font-bold uppercase text-[11px] tracking-wide ${log.type === 'fail' ? 'text-red-500' : 'text-blue-400'}`}>{log.title}:</span>
+                                                <span className={`font-bold uppercase text-[11px] tracking-wide ${log.type === 'crit' ? 'text-yellow-400 text-glow' : log.type === 'fail' ? 'text-red-500' : 'text-blue-400'}`}>{log.title}:</span>
                                                 <span className="text-white font-bold text-sm group-hover:text-glow">{log.result}</span>
                                                 <span className="text-gray-500 text-xs">- {log.detail}</span>
                                             </div>
