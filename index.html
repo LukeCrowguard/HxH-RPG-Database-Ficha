@@ -247,7 +247,7 @@
         Users, Upload, Share2, Copy, Hexagon, Link as LinkIcon, Cpu,
         Monitor, Target, PawPrint, Terminal, ChevronRight, ImageIcon, BatteryCharging, Sparkles,
         AlertCircle, Calculator, Info, Lock, ChevronUp, ChevronDown, Menu, ShieldCheck, Minimize2, Key, LogOut,
-        Eye, EyeOff
+        Eye, EyeOff, Send
       } from 'https://esm.sh/lucide-react@0.294.0';
       import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
@@ -264,8 +264,17 @@
       const rollDice = (diceStr) => {
         try {
             if(!diceStr) return { total: 0, rolls: [], str: diceStr };
-            const [count, die] = diceStr.toLowerCase().split('d').map(Number);
-            if(!count || !die) return { total: 0, rolls: [], str: diceStr };
+            // Remove spaces, lowercase
+            const clean = diceStr.toLowerCase().replace(/\s/g, '');
+            // Regex for XdY+Z or XdY-Z
+            const match = clean.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+            
+            if (!match) return { total: 0, rolls: [], str: diceStr, error: true };
+
+            const count = parseInt(match[1]) || 1;
+            const die = parseInt(match[2]);
+            const mod = match[3] ? parseInt(match[3]) : 0;
+
             let total = 0;
             let rolls = [];
             for (let i = 0; i < count; i++) {
@@ -273,8 +282,9 @@
                 rolls.push(r);
                 total += r;
             }
-            return { total, rolls, str: diceStr };
-        } catch (e) { return { total: 0, rolls: [], str: diceStr }; }
+            total += mod;
+            return { total, rolls, str: diceStr, mod };
+        } catch (e) { return { total: 0, rolls: [], str: diceStr, error: true }; }
       };
 
       // IMAGE VALIDATION
@@ -596,6 +606,7 @@
         const [conditionInput, setConditionInput] = useState("");
         const [calculatorTarget, setCalculatorTarget] = useState(null); 
         const [accessKey, setAccessKey] = useState("");
+        const [customDice, setCustomDice] = useState("");
         
         const logsEndRef = useRef(null);
 
@@ -608,12 +619,28 @@
                     return;
                 }
                 try {
-                    const { data, error } = await supabase.from('characters').select('*').order('updated_at', {ascending: false});
-                    if(!error && data && data.length > 0) {
-                        const loadedChars = data.map(d => ({...d.data, id: d.id}));
+                    // Load Characters
+                    const { data: charData, error: charError } = await supabase.from('characters').select('*').order('updated_at', {ascending: false});
+                    if(!charError && charData && charData.length > 0) {
+                        const loadedChars = charData.map(d => ({...d.data, id: d.id}));
                         setCharacters(loadedChars);
-                        // Do not auto-select activeCharId, let user choose in lobby
                     }
+
+                    // Load Logs (Initial)
+                    const { data: logData } = await supabase.from('logs').select('*').order('created_at', {ascending: false}).limit(50);
+                    if(logData) {
+                        setLogs(logData.map(l => l.data).reverse());
+                    }
+
+                    // Subscribe to Realtime Logs
+                    const channel = supabase.channel('public:logs')
+                        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs' }, payload => {
+                            setLogs(prev => [...prev, payload.new.data]);
+                        })
+                        .subscribe();
+
+                    return () => supabase.removeChannel(channel);
+
                 } catch(e) { console.error(e); }
                 finally { setLoading(false); }
             };
@@ -671,8 +698,20 @@
             }
         };
 
-        const addLog = (title, result, detail, type = 'info') => {
-            setLogs(prev => [...prev, { id: Math.random(), title, result, detail, type, time: new Date() }]);
+        const addLog = async (title, result, detail, type = 'info') => {
+            const charName = activeCharId ? (characters.find(c => c.id === activeCharId)?.nickname || 'Desconhecido') : 'Sistema';
+            const finalTitle = activeCharId ? `${charName} • ${title}` : title;
+            const newLog = { id: Math.random(), title: finalTitle, result, detail, type, time: new Date() };
+            
+            // Optimistic update if no Supabase, otherwise let realtime handle it
+            if(!supabase) setLogs(prev => [...prev, newLog]);
+            else {
+                // We use a simplified object for JSON storage to avoid Date object issues if any
+                await supabase.from('logs').insert({ 
+                    data: { ...newLog, time: new Date().toISOString() },
+                    created_at: new Date().toISOString()
+                });
+            }
         };
 
         const char = characters.find(c => c.id === activeCharId) || INITIAL_CHARACTER;
@@ -714,16 +753,46 @@
         const handleRollSkill = (skill, source) => {
             if(isEditing) return;
             const roll = rollDice(skill.damageDice || skill.damage || '0');
-            addLog(`Uso: ${skill.name} (${source || 'Habilidade'})`, roll.total > 0 ? roll.total : 'Ativado', roll.str ? `[${roll.str}]: ${roll.rolls.join('+')}` : '', 'combat');
+            
+            // Format log nicely
+            const rollDetails = roll.mod !== 0 
+                ? `[${roll.str}]: ${roll.rolls.join('+')} (${roll.mod > 0 ? '+' : ''}${roll.mod})` 
+                : `[${roll.str}]: ${roll.rolls.join('+')}`;
+
+            addLog(`Uso: ${skill.name} (${source || 'Habilidade'})`, roll.total > 0 ? roll.total : 'Ativado', roll.str ? rollDetails : '', 'combat');
+            
             if(skill.cost > 0) {
                  if (skill.costType === 'HP') {
-                    if(char.currentHp > skill.cost) updateChar('currentHp', char.currentHp - skill.cost);
+                    if(char.currentHp > skill.cost) {
+                        const newHp = char.currentHp - skill.cost;
+                        updateChar('currentHp', newHp);
+                        addLog('Custo HP', -skill.cost, `Vida restante: ${newHp}`, 'fail');
+                    }
                     else alert("Vida insuficiente!");
                  } else {
-                     if(char.currentNen >= skill.cost) updateChar('currentNen', char.currentNen - skill.cost);
+                     if(char.currentNen >= skill.cost) {
+                         const newNen = char.currentNen - skill.cost;
+                         updateChar('currentNen', newNen);
+                         addLog('Custo Nen', -skill.cost, `Aura restante: ${newNen}`, 'info');
+                     }
                      else alert("Nen insuficiente!");
                  }
             }
+        };
+
+        const handleCustomRoll = () => {
+            if(!customDice) return;
+            const roll = rollDice(customDice);
+            if(roll.error) {
+                alert("Formato inválido! Use: 1d20, 2d6+3, d100-5, etc.");
+                return;
+            }
+            const rollDetails = roll.mod !== 0 
+                ? `[${roll.str}]: ${roll.rolls.join('+')} (${roll.mod > 0 ? '+' : ''}${roll.mod})` 
+                : `[${roll.str}]: ${roll.rolls.join('+')}`;
+                
+            addLog('Rolagem Custom', roll.total, rollDetails);
+            setCustomDice("");
         };
 
         const addItem = (type, parentId) => {
@@ -933,7 +1002,7 @@ Cole o link da imagem aqui:`;
                     const { type, id, field, current, max, label } = calculatorTarget;
                     let newValue = Math.max(0, Math.min(max, current + delta));
                     const isGain = delta > 0;
-                    addLog(`Calculadora: ${label}`, newValue, `${isGain?'Recuperado':'Gasto'}: ${Math.abs(delta)}`, 'info');
+                    addLog(`Calculadora: ${label}`, newValue, `${isGain?'Recuperado':'Gasto'}: ${Math.abs(delta)}`, isGain ? 'info' : 'fail');
                     if (type === 'char') updateChar(field, newValue);
                     else if (type === 'summon') {
                         const newSummons = char.summons.map(s => s.id === id ? {...s, [field]: newValue} : s);
@@ -1309,8 +1378,19 @@ Cole o link da imagem aqui:`;
                             <div className="flex flex-wrap items-center justify-between mb-3 w-full gap-3 pb-2 border-b border-white/5 flex-shrink-0">
                                 <span className="flex items-center gap-2 text-theme font-bold uppercase tracking-wider text-[10px] animate-pulse-slow"><Terminal size={14}/> Console de Batalha</span>
                                 <div className="flex gap-4 items-center">
-                                    {consoleExpanded && <div className="flex items-center gap-1 bg-white/5 rounded px-2 py-1">{[4,6,8,10,12,20,100].map(d => <button key={d} onClick={() => { const r = Math.floor(Math.random()*d)+1; addLog(`d${d}`, r, 'Rolagem'); }} className="text-[10px] text-gray-400 hover:text-white hover:bg-white/10 px-1.5 py-0.5 rounded transition-colors active:scale-90 font-bold z-20 relative">d{d}</button>)}</div>}
-                                    {consoleExpanded && <button onClick={() => { const healHp=Math.floor(char.maxHp*0.2); const healNen=Math.floor(char.maxNen*0.2); updateChar('currentHp',Math.min(char.maxHp,char.currentHp+healHp)); updateChar('currentNen',Math.min(char.maxNen,char.currentNen+healNen)); addLog('Descanso','Recuperado',`+${healHp} HP, +${healNen} AP`); }} className="text-[10px] text-green-400 hover:text-white hover:bg-green-600 flex items-center gap-1 bg-green-900/20 px-3 py-1.5 rounded border border-green-500/20 font-bold uppercase tracking-wider transition-all z-20 relative box-glow"><BatteryCharging size={12}/> Descansar</button>}
+                                    {consoleExpanded && (
+                                        <div className="flex items-center gap-2">
+                                            <div className="relative group">
+                                                <input value={customDice} onChange={e => setCustomDice(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleCustomRoll(); }} placeholder="2d20+5" className="bg-black/50 border border-white/10 text-white text-[10px] px-2 py-1 rounded w-20 outline-none focus:border-theme/50 transition-colors font-bold text-center"/>
+                                                <button onClick={handleCustomRoll} className="absolute right-1 top-1 text-gray-500 hover:text-theme"><Send size={10}/></button>
+                                            </div>
+                                            <div className="h-4 w-[1px] bg-white/10 mx-1"></div>
+                                            <div className="flex items-center gap-1 bg-white/5 rounded px-2 py-1">
+                                                {[4,6,8,10,12,20,100].map(d => <button key={d} onClick={() => { const r = Math.floor(Math.random()*d)+1; addLog(`d${d}`, r, 'Rolagem'); }} className="text-[10px] text-gray-400 hover:text-white hover:bg-white/10 px-1.5 py-0.5 rounded transition-colors active:scale-90 font-bold z-20 relative">d{d}</button>)}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {consoleExpanded && <button onClick={() => { const healHp=Math.floor(char.maxHp*0.2); const healNen=Math.floor(char.maxNen*0.2); updateChar('currentHp',Math.min(char.maxHp,char.currentHp+healHp)); updateChar('currentNen',Math.min(char.maxNen,char.currentNen+healNen)); addLog('Descanso','Recuperado',`+${healHp} HP, +${healNen} AP`, 'info'); }} className="text-[10px] text-green-400 hover:text-white hover:bg-green-600 flex items-center gap-1 bg-green-900/20 px-3 py-1.5 rounded border border-green-500/20 font-bold uppercase tracking-wider transition-all z-20 relative box-glow"><BatteryCharging size={12}/> Descansar</button>}
                                     <button onClick={() => setConsoleExpanded(!consoleExpanded)} className="text-gray-500 hover:text-white transition-colors">{consoleExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button>
                                 </div>
                             </div>
@@ -1318,7 +1398,7 @@ Cole o link da imagem aqui:`;
                                 <div className="space-y-1 pl-1 overflow-y-auto custom-scrollbar flex-1">
                                     {logs.slice().reverse().map(log => (
                                         <div key={log.id} className="flex gap-3 animate-fade-in border-l-2 border-transparent hover:border-theme transition-colors py-1 hover:bg-white/5 px-2 rounded-r group">
-                                            <span className="text-gray-600 text-[10px] self-center w-12 text-right opacity-50">[{log.time.toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit'})}]</span>
+                                            <span className="text-gray-600 text-[10px] self-center w-12 text-right opacity-50">[{new Date(log.time).toLocaleTimeString([], {hour12:false, hour:'2-digit', minute:'2-digit'})}]</span>
                                             <div className="flex-1 flex gap-2 items-baseline"><span className={`font-bold uppercase text-[11px] tracking-wide ${log.type === 'crit' ? 'text-yellow-400 text-glow' : log.type === 'fail' ? 'text-red-500' : 'text-blue-400'}`}>{log.title}:</span><span className="text-white font-bold text-sm group-hover:text-glow">{log.result}</span><span className="text-gray-500 text-xs">- {log.detail}</span></div>
                                         </div>
                                     ))}
