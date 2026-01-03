@@ -230,7 +230,7 @@
       import { 
         Shield, Zap, Heart, Sword, Brain, Activity, Ghost, Feather, Dna, 
         Dice5, Trash2, Edit3, Save, Plus, X, Camera, ScrollText, Box,
-        Users, Upload, Share2, Copy, Hexagon,
+        Users, Upload, Share2, Copy, Hexagon, Link as LinkIcon, Cpu,
         Monitor, Target, PawPrint, Terminal, ChevronRight, ImageIcon, BatteryCharging, Sparkles,
         AlertCircle, Calculator, Info, Lock, ChevronUp, ChevronDown, Menu, ShieldCheck, Minimize2
       } from 'https://esm.sh/lucide-react@0.294.0';
@@ -262,39 +262,14 @@
         } catch (e) { return { total: 0, rolls: [], str: diceStr }; }
       };
 
-      const resizeImage = (file, maxWidth = 800) => {
-        return new Promise((resolve, reject) => {
-            if (!file || !file.type.startsWith('image/')) {
-                reject("Arquivo inválido. Selecione uma imagem.");
-                return;
-            }
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-                        if (width > maxWidth) {
-                            height = Math.round(height * (maxWidth / width));
-                            width = maxWidth;
-                        }
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        resolve(canvas.toDataURL('image/jpeg', 0.85)); 
-                    } catch (err) {
-                        resolve(event.target.result); 
-                    }
-                };
-                img.onerror = (error) => reject("Erro ao carregar imagem.");
-            };
-            reader.onerror = (error) => reject("Erro ao ler arquivo.");
-        });
+      // IMAGE VALIDATION
+      const validateImageUrl = (url) => {
+          return new Promise((resolve) => {
+              const img = new Image();
+              img.onload = () => resolve(true);
+              img.onerror = () => resolve(false);
+              img.src = url;
+          });
       };
       
       const generateUUID = () => {
@@ -331,7 +306,7 @@
       const ATTR_ICONS = { strength: Sword, intelligence: Brain, charisma: Feather, determination: Dna, constitution: Activity, prestidigitation: Ghost };
 
       const INITIAL_CHARACTER = {
-        id: '123e4567-e89b-12d3-a456-426614174000', // Valid UUID for template
+        id: '123e4567-e89b-12d3-a456-426614174000', 
         name: "Cristian Martínez",
         nickname: "'Hades'",
         avatarUrl: "https://i.pinimg.com/736x/8e/46/64/8e4664440076a084c7873994c657a827.jpg", 
@@ -472,7 +447,7 @@
                              </div>
                          )}
                          {isEditing && onUpload && (
-                             <button onClick={(e) => { e.stopPropagation(); onUpload(); }} className="absolute -bottom-2 -right-2 bg-black/80 text-white p-1 rounded-full border border-white/20 hover:bg-white hover:text-black transition-colors z-20 shadow-lg"><Upload size={10} /></button>
+                             <button onClick={(e) => { e.stopPropagation(); onUpload(); }} className="absolute -bottom-2 -right-2 bg-black/80 text-white p-1 rounded-full border border-white/20 hover:bg-white hover:text-black transition-colors z-20 shadow-lg"><LinkIcon size={10} /></button>
                          )}
                      </div>
                      {isEditing ? (
@@ -605,7 +580,6 @@
         const [conditionInput, setConditionInput] = useState("");
         const [calculatorTarget, setCalculatorTarget] = useState(null); 
         
-        const fileInputRef = useRef(null);
         const logsEndRef = useRef(null);
 
         // Load Data from Supabase
@@ -693,10 +667,10 @@
         const attrLabels = char.attributeLabels || INITIAL_CHARACTER.attributeLabels;
 
         // Specialized handlers
-        const handleRollSkill = (skill) => {
+        const handleRollSkill = (skill, source) => {
             if(isEditing) return;
             const roll = rollDice(skill.damageDice || skill.damage || '0');
-            addLog(`Uso: ${skill.name}`, roll.total > 0 ? roll.total : 'Ativado', roll.str ? `[${roll.str}]: ${roll.rolls.join('+')}` : '', 'combat');
+            addLog(`Uso: ${skill.name} (${source || 'Habilidade'})`, roll.total > 0 ? roll.total : 'Ativado', roll.str ? `[${roll.str}]: ${roll.rolls.join('+')}` : '', 'combat');
             if(skill.cost > 0) {
                  if (skill.costType === 'HP') {
                     if(char.currentHp > skill.cost) updateChar('currentHp', char.currentHp - skill.cost);
@@ -732,7 +706,7 @@
         const deleteItem = (collection, id, parentId) => {
              if(!confirm("Remover item?")) return;
              if (collection === 'summonSkill' && parentId) {
-                 const newSummons = (char.summons||[]).map(s => s.id === parentId ? { ...s, skills: s.skills.filter(k => k.id !== id) } : s);
+                 const newSummons = (char.summons||[]).map(s => s.id === parentId ? { ...s, skills: (s.skills||[]).filter(k => k.id !== id) } : s);
                  handleStateUpdate(prev => prev.map(c => c.id === activeCharId ? { ...c, summons: newSummons } : c));
              } else {
                  const list = char[collection] || [];
@@ -740,31 +714,43 @@
              }
         }
 
-        const handleFileUpload = async (e) => {
-            const file = e.target.files?.[0];
-            if(file && uploadTarget) {
-                try {
-                    const res = await resizeImage(file);
-                    if (uploadTarget.type === 'avatar') updateChar('avatarUrl', res);
-                    else if (uploadTarget.type === 'skill') updateNested('skills', uploadTarget.id, { imageUrl: res });
-                    else if (uploadTarget.type === 'summon') updateNested('summons', uploadTarget.id, { avatarUrl: res });
-                    else if (uploadTarget.type === 'equippedWeapon') updateNested('equippedWeapon', 'imageUrl', res);
-                    else if (uploadTarget.type === 'attribute') {
-                        const newMeta = { ...char.attributeMetadata, [uploadTarget.key]: { imageUrl: res } };
-                        updateChar('attributeMetadata', newMeta);
-                    }
-                } catch (error) { console.error(error); } 
-                finally { setUploadTarget(null); }
+        const triggerUpload = async (target) => {
+            const explanation = "⚠️ AVISO DE ARMAZENAMENTO ⚠️\n\nPara evitar o limite de armazenamento do banco de dados, o sistema aceita apenas LINKS de imagens.\n\nPor favor, cole um link direto da sua imagem (Ex: Imgur, Discord, Pinterest).";
+            const url = prompt(explanation);
+
+            if (!url) return;
+
+            if(!url.startsWith('http')) {
+                alert("O link deve começar com http:// ou https://");
+                return;
+            }
+
+            // Simple blocking notification
+            const originalTitle = document.title;
+            document.title = "Verificando imagem...";
+            
+            const isValid = await validateImageUrl(url);
+            document.title = originalTitle;
+
+            if (!isValid) {
+                alert("❌ Erro: O link fornecido não parece ser uma imagem válida ou acessível. Verifique se o link termina em .jpg, .png, etc ou se é público.");
+                return;
+            }
+
+            if (target.type === 'avatar') updateChar('avatarUrl', url);
+            else if (target.type === 'skill') updateNested('skills', target.id, { imageUrl: url });
+            else if (target.type === 'summon') updateNested('summons', target.id, { avatarUrl: url });
+            else if (target.type === 'equippedWeapon') updateNested('equippedWeapon', 'imageUrl', url);
+            else if (target.type === 'attribute') {
+                const newMeta = { ...char.attributeMetadata, [target.key]: { imageUrl: url } };
+                updateChar('attributeMetadata', newMeta);
             }
         }
 
-        const triggerUpload = (target) => { setUploadTarget(target); fileInputRef.current?.click(); }
-
-        if (loading) return <div className="h-screen w-full flex items-center justify-center bg-black text-white font-tech animate-pulse">BOOTING SYSTEM...</div>;
+        if (loading) return <div className="h-screen w-full flex items-center justify-center bg-black text-white font-tech animate-pulse">INICIANDO SISTEMA...</div>;
 
         return (
             <div className={`min-h-screen relative text-gray-200 font-body ${isEditing ? 'edit-mode' : ''}`} style={{ '--theme-color': themeColor }}>
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} accept="image/*" />
                 
                 <CalculatorModal isOpen={!!calculatorTarget} onClose={() => setCalculatorTarget(null)} target={calculatorTarget} onConfirm={(delta) => {
                     if (!calculatorTarget) return;
@@ -781,12 +767,12 @@
 
                 {/* Navbar */}
                 <div className="sticky top-0 z-50 bg-[#0a0a0c]/80 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex justify-between items-center shadow-2xl">
-                    <div className="flex items-center gap-4 cursor-pointer" onClick={() => setIsCharModalOpen(true)}>
-                        <div className="w-10 h-10 flex items-center justify-center bg-white/5 rounded border border-white/10 tech-border relative z-10 box-glow hover:border-theme/50 transition-colors">
-                            <span className="font-title text-theme text-2xl font-bold select-none text-glow">H</span>
+                    <div className="flex items-center gap-4 cursor-pointer group" onClick={() => setIsCharModalOpen(true)}>
+                        <div className="flex items-center justify-center bg-white/5 rounded p-2 border border-white/10 tech-border relative z-10 box-glow group-hover:border-theme/50 transition-colors">
+                            <Hexagon size={24} className="text-theme animate-pulse-slow"/>
                         </div>
                         <div className="flex flex-col">
-                            <span className="font-tech text-[10px] font-bold tracking-[0.3em] text-gray-500 uppercase">Sistema Hunter</span>
+                            <span className="font-tech text-[10px] font-bold tracking-[0.2em] text-theme uppercase flex items-center gap-2"><Cpu size={10}/> Schrodinger Corp.</span>
                             <span className="font-bold text-white text-sm tracking-widest uppercase text-glow">{char.nickname}</span>
                         </div>
                     </div>
@@ -807,9 +793,9 @@
                                 <img src={char.avatarUrl} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-all duration-700 scale-100 group-hover:scale-105 filter contrast-125 relative z-10"/>
                                 <div className="absolute inset-0 bg-theme opacity-10 filter blur-xl animate-aura"></div>
                                 <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-20"></div>
-                                {isEditing && <button onClick={() => triggerUpload({type:'avatar'})} className="absolute top-4 right-4 p-3 bg-black/50 backdrop-blur text-white rounded hover:bg-white hover:text-black border border-white/20 z-30 shadow-lg"><Upload size={20}/></button>}
+                                {isEditing && <button onClick={() => triggerUpload({type:'avatar'})} className="absolute top-4 right-4 p-3 bg-black/50 backdrop-blur text-white rounded hover:bg-white hover:text-black border border-white/20 z-30 shadow-lg"><LinkIcon size={20}/></button>}
                                 <div className="absolute bottom-6 left-6 right-6 z-30">
-                                    <div className="px-3 py-1 bg-theme text-black font-bold text-[10px] uppercase tracking-widest inline-block mb-2 rounded shadow-[0_0_10px_var(--theme-color)]">License No. {char.id.substring(0,6)}</div>
+                                    <div className="px-3 py-1 bg-theme text-black font-bold text-[10px] uppercase tracking-widest inline-block mb-2 rounded shadow-[0_0_10px_var(--theme-color)]">Licença Nº {char.id.substring(0,6)}</div>
                                     {isEditing ? <input value={char.nickname} onChange={e => updateChar('nickname', e.target.value)} className="bg-black/50 backdrop-blur border-b border-white/50 text-4xl font-title text-white w-full px-2 py-1"/> : <h1 className="text-5xl font-title text-white drop-shadow-lg leading-tight tracking-wide text-glow" style={{textShadow: `0 0 20px ${themeColor}`}}>{char.nickname}</h1>}
                                     <div className="flex items-center gap-3 mt-3">
                                         <div className="h-[2px] bg-white/50 w-12"></div>
@@ -818,11 +804,11 @@
                                 </div>
                             </div>
                             <div className="bg-[#101012] px-6 py-4 border-t border-white/10 flex justify-between items-center font-mono text-xs relative z-20">
-                                <div className="flex items-center gap-3"><span className="text-gray-500 font-tech tracking-widest text-[10px]">RANK</span>
+                                <div className="flex items-center gap-3"><span className="text-gray-500 font-tech tracking-widest text-[10px]">NÍVEL</span>
                                     {isEditing ? <input type="number" value={char.hunterLevel} onChange={(e) => updateChar('hunterLevel', parseInt(e.target.value) || 0)} className="w-12 text-center text-white bg-white/5 border-b border-white/20"/> : <div className="text-white text-xl font-bold">{char.hunterLevel}</div>}
                                 </div>
                                 <div className="flex-1 ml-6 text-right">
-                                    <div className="flex justify-between text-[9px] uppercase text-gray-500 mb-1 tracking-wider"><span>Experience</span><span>{char.xp} / {char.maxXp} XP</span></div>
+                                    <div className="flex justify-between text-[9px] uppercase text-gray-500 mb-1 tracking-wider"><span>Experiência</span><span>{char.xp} / {char.maxXp} XP</span></div>
                                     <div className="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden shadow-inner"><div className="h-full bg-theme shadow-[0_0_15px_var(--theme-color)] relative" style={{width: `${Math.min(100, (char.xp/char.maxXp)*100)}%`}}></div></div>
                                 </div>
                             </div>
@@ -854,7 +840,7 @@
                                     <div className="mt-2 flex items-center justify-between bg-black/30 p-4 rounded border border-white/5 relative overflow-hidden group hover:border-blue-500/30 transition-all duration-500 shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
                                         <div className="flex items-center gap-4 relative z-10">
                                             <ShieldCheck size={34} className="text-blue-400"/>
-                                            <div className="flex flex-col"><span className="text-[10px] font-tech text-blue-400 uppercase tracking-widest font-bold text-glow">Defesa</span><span className="text-[9px] text-gray-500 uppercase tracking-wider">Armor Class</span></div>
+                                            <div className="flex flex-col"><span className="text-[10px] font-tech text-blue-400 uppercase tracking-widest font-bold text-glow">Defesa</span><span className="text-[9px] text-gray-500 uppercase tracking-wider">Classe de Armadura</span></div>
                                         </div>
                                         {isEditing ? <input type="number" value={char.ca} onChange={e => updateChar('ca', parseInt(e.target.value))} className="w-20 bg-transparent text-white text-right font-bold text-4xl border-b border-white/20 relative z-20 font-title"/> : <span className="text-5xl font-title text-white relative z-20 drop-shadow-[0_0_10px_rgba(96,165,250,0.8)] pr-2" style={{textShadow: '0 0 20px rgba(59,130,246,0.6)'}}>{char.ca}</span>}
                                     </div>
@@ -925,7 +911,7 @@
                                         <div className="flex flex-col md:flex-row gap-6">
                                             <div className="w-full md:w-48 h-48 bg-black/40 relative border border-white/10 flex-shrink-0 group-hover:border-white/20 transition-colors shadow-inner">
                                                 {equippedWeapon.imageUrl ? <img src={equippedWeapon.imageUrl} className="w-full h-full object-cover"/> : <div className="flex items-center justify-center h-full text-white/10"><Sword size={48}/></div>}
-                                                {isEditing && <button onClick={() => triggerUpload({type: 'equippedWeapon'})} className="absolute inset-0 bg-black/70 opacity-0 hover:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-sm z-20"><Camera size={24}/></button>}
+                                                {isEditing && <button onClick={() => triggerUpload({type: 'equippedWeapon'})} className="absolute inset-0 bg-black/70 opacity-0 hover:opacity-100 flex items-center justify-center text-white transition-opacity backdrop-blur-sm z-20"><LinkIcon size={24}/></button>}
                                             </div>
                                             <div className="flex-1 flex flex-col">
                                                 <div className="flex justify-between items-start mb-3">
@@ -1024,6 +1010,66 @@
                                                                 ))}
                                                             </div>
                                                         )}
+                                                    </div>
+                                                </div>
+                                                {/* FIXED: SUMMON SKILLS SECTION */}
+                                                <div className="p-6 bg-[#0f0f11]">
+                                                    <div className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-4 border-b border-white/10 pb-2 flex justify-between items-center">
+                                                        <span>Habilidades da Invocação</span>
+                                                        {isEditing && <button onClick={() => addItem('summonSkill', summon.id)} className="text-theme hover:text-white flex items-center gap-1 text-[10px] bg-theme/10 px-2 py-1 rounded transition-colors z-20 relative"><Plus size={12}/> Add</button>}
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {(!summon.skills || summon.skills.length === 0) && <div className="text-xs text-gray-600 italic text-center py-4">Sem habilidades registradas.</div>}
+                                                        {(summon.skills || []).map(skill => (
+                                                            <div key={skill.id} className="bg-black/40 border border-white/5 p-4 rounded-sm flex flex-col gap-3 relative z-10 hover:bg-white/5 transition-colors">
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className="flex items-center gap-3 flex-1">
+                                                                        {isEditing ? <input value={skill.name} onChange={e => {
+                                                                            const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, name: e.target.value} : s);
+                                                                            const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                            updateChar('summons', newSummons);
+                                                                        }} className="bg-transparent border-b border-white/20 text-sm font-bold text-white w-full"/> : <span className="text-sm font-bold text-white cursor-pointer hover:text-theme transition-colors" onClick={() => handleRollSkill(skill, summon.name)}>{skill.name}</span>}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3">
+                                                                        {isEditing ? (
+                                                                             <div className="flex items-center gap-2">
+                                                                                <input type="number" value={skill.cost} onChange={e => {
+                                                                                    const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, cost: parseInt(e.target.value)} : s);
+                                                                                    const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                                    updateChar('summons', newSummons);
+                                                                                }} className="w-10 text-xs bg-white/10 text-center p-1 rounded"/>
+                                                                                 <select value={skill.costType || 'Nen'} onChange={e => {
+                                                                                    const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, costType: e.target.value} : s);
+                                                                                    const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                                    updateChar('summons', newSummons);
+                                                                                }} className="text-xs bg-black text-gray-400 p-1 rounded uppercase">
+                                                                                    <option value="Nen">AP</option>
+                                                                                    <option value="HP">HP</option>
+                                                                                </select>
+                                                                             </div>
+                                                                        ) : (
+                                                                            skill.cost > 0 && <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${skill.costType === 'HP' ? 'text-red-400 bg-red-900/20' : 'text-blue-400 bg-blue-900/20'}`}>{skill.cost} {skill.costType === 'HP' ? 'HP' : 'AP'}</span>
+                                                                        )}
+                                                                        
+                                                                        {isEditing ? <input value={skill.damage} onChange={e => {
+                                                                            const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, damage: e.target.value} : s);
+                                                                            const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                            updateChar('summons', newSummons);
+                                                                        }} className="w-16 text-xs bg-red-900/30 text-red-200 text-center p-1 rounded" placeholder="Dano"/> : 
+                                                                        (skill.damage && <button onClick={() => handleRollSkill(skill, summon.name)} className="text-[10px] text-red-300 flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 px-2 py-1 rounded transition-colors relative z-20"><Dice5 size={12}/> {skill.damage}</button>)}
+
+                                                                        {isEditing && <button onClick={() => deleteItem('summonSkill', skill.id, summon.id)} className="text-gray-600 hover:text-red-500 p-1 z-20 relative"><Trash2 size={16}/></button>}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-xs text-gray-400 border-l-2 border-white/10 pl-3">
+                                                                     {isEditing ? <textarea value={skill.description} onChange={e => {
+                                                                        const newSkills = summon.skills.map(s => s.id === skill.id ? {...s, description: e.target.value} : s);
+                                                                        const newSummons = char.summons.map(s => s.id === summon.id ? {...s, skills: newSkills} : s);
+                                                                        updateChar('summons', newSummons);
+                                                                    }} className="w-full bg-transparent text-gray-400 h-16 resize-y custom-scrollbar overflow-y-auto"/> : <span className="break-words whitespace-pre-wrap">{skill.description}</span>}
+                                                                </div>
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 </div>
                                             </div>
