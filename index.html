@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Hunter Database | Supabase Edition</title>
+    <meta name="theme-color" content="#050506">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@300;400;700&family=Shojumaru&family=Orbitron:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind Configuration -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'hxh-dark': '#050506',
+              'hxh-panel': '#131316',
+              'theme': 'var(--theme-color)',
+            },
+            fontFamily: {
+              'title': ['Shojumaru', 'cursive'],
+              'header': ['Cinzel', 'serif'],
+              'tech': ['Orbitron', 'sans-serif'],
+              'body': ['Lato', 'sans-serif'],
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+              'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 10s ease-in-out infinite',
+              'aura': 'aura 3s infinite alternate',
+              'spin-slow': 'spin 15s linear infinite',
+              'spin-reverse': 'spin 20s linear infinite reverse',
+            },
+            keyframes: {
+              fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+              float: { '0%, 100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-20px)' } },
+              aura: { 
+                '0%': { boxShadow: '0 0 20px var(--theme-color), 0 0 40px var(--theme-color)' },
+                '100%': { boxShadow: '0 0 40px var(--theme-color), 0 0 80px var(--theme-color)' }
+              }
+            }
+          }
+        }
+      }
+    </script>
+    
+    <style>
+      :root { --theme-color: #9b59b6; }
+      body { background-color: #020203; color: #e0e0e0; font-family: 'Lato', sans-serif; overflow-x: hidden; }
+      
+      /* Glassmorphism & Utilities */
+      .glass-panel {
+        background: rgba(10, 10, 14, 0.7);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        border-radius: 6px;
+      }
+      .neon-border { box-shadow: 0 0 10px rgba(var(--theme-color), 0.1), inset 0 0 20px rgba(var(--theme-color), 0.05); border: 1px solid rgba(var(--theme-color), 0.3); }
+      .text-glow { text-shadow: 0 0 10px currentColor; }
+      .box-glow { box-shadow: 0 0 15px rgba(var(--theme-color), 0.2); }
+      
+      /* Scrollbar */
+      .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--theme-color); }
+
+      /* Inputs */
+      input, textarea, select { background: transparent; color: inherit; border: none; outline: none; }
+      .edit-mode input, .edit-mode textarea, .edit-mode select { background: rgba(0,0,0,0.6); border-bottom: 1px solid var(--theme-color); padding: 4px 8px; border-radius: 4px; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "name": "HxH RPG Database",
+  "description": "Interactive Hunter x Hunter RPG Character Sheet with Supabase persistence.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
