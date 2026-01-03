@@ -296,6 +296,16 @@
             reader.onerror = (error) => reject("Erro ao ler arquivo.");
         });
       };
+      
+      const generateUUID = () => {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+      };
 
       const NenType = {
         Enhancer: 'Reforço',
@@ -321,7 +331,7 @@
       const ATTR_ICONS = { strength: Sword, intelligence: Brain, charisma: Feather, determination: Dna, constitution: Activity, prestidigitation: Ghost };
 
       const INITIAL_CHARACTER = {
-        id: 'char_default',
+        id: '123e4567-e89b-12d3-a456-426614174000', // Valid UUID for template
         name: "Cristian Martínez",
         nickname: "'Hades'",
         avatarUrl: "https://i.pinimg.com/736x/8e/46/64/8e4664440076a084c7873994c657a827.jpg", 
@@ -1094,7 +1104,7 @@
                                     </div>
                                 ))}
                                 <button onClick={() => {
-                                    const newChar = {...INITIAL_CHARACTER, id: Math.random().toString(36).substr(2, 9), nickname: 'Novo Hunter', name: 'Desconhecido'};
+                                    const newChar = {...INITIAL_CHARACTER, id: generateUUID(), nickname: 'Novo Hunter', name: 'Desconhecido'};
                                     setCharacters(prev => [...prev, newChar]);
                                     setActiveCharId(newChar.id);
                                     setIsCharModalOpen(false);
