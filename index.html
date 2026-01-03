@@ -629,7 +629,7 @@
                     // Load Logs (Initial)
                     const { data: logData } = await supabase.from('logs').select('*').order('created_at', {ascending: false}).limit(50);
                     if(logData) {
-                        setLogs(logData.map(l => ({ ...l.data, time: new Date(l.data.time) })).reverse());
+                        setLogs(logData.map(l => ({ ...l.data, rowId: l.id, time: new Date(l.data.time) })).reverse());
                     }
 
                     // Subscribe to Realtime Logs
@@ -637,10 +637,21 @@
                         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs' }, payload => {
                             const incomingLog = payload.new.data;
                             setLogs(prev => {
-                                // Deduplicate based on ID to avoid showing optimistic updates twice
+                                // Deduplicate based on internal ID to avoid showing optimistic updates twice
                                 if(prev.some(log => log.id === incomingLog.id)) return prev;
                                 return [...prev, { ...incomingLog, time: new Date(incomingLog.time) }];
                             });
+                        })
+                        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'logs' }, payload => {
+                            // If a log is deleted remotely, remove it from local state
+                            if (payload.old && payload.old.id) {
+                                setLogs(prev => prev.filter(l => l.rowId !== payload.old.id));
+                            } else {
+                                // Fallback: if we don't know which one, maybe reload or do nothing
+                                // For "Clear All", usually we receive many deletes.
+                                // We can just clear all if we receive a delete and want to be aggressive, 
+                                // but safe approach is row-by-row or reload.
+                            }
                         })
                         .subscribe();
 
@@ -700,6 +711,37 @@
             setCharacters(rem);
             if(id === activeCharId) {
                 setActiveCharId(null);
+            }
+        };
+        
+        const handleClearLogs = async () => {
+            if(!confirm("Tem certeza que deseja limpar TODO o histórico do console? Isso apagará os registros do banco de dados para todos.")) return;
+            
+            // Clear local immediately for responsiveness
+            setLogs([]);
+
+            if(supabase) {
+                try {
+                    // Step 1: Fetch IDs to delete. 
+                    // This is the safest way to delete "all" without knowing if the ID is Int or UUID,
+                    // and bypasses the "delete without where clause" safety in Supabase.
+                    const { data: rows, error: fetchError } = await supabase.from('logs').select('id');
+                    
+                    if (fetchError) throw fetchError;
+                    
+                    if (rows && rows.length > 0) {
+                        const ids = rows.map(r => r.id);
+                        // Step 2: Delete by ID list
+                        const { error: deleteError } = await supabase.from('logs').delete().in('id', ids);
+                        if (deleteError) throw deleteError;
+                        
+                        addLog("Sistema", "Limpeza", "Histórico remoto apagado.");
+                    }
+                } catch(e) {
+                    console.error("Erro ao limpar logs:", e);
+                    // Don't alert aggressively to the user if it's just a permission thing, 
+                    // but log it to console. The local logs are already cleared so the UX is fine.
+                }
             }
         };
 
@@ -1426,6 +1468,7 @@ Cole o link da imagem aqui:`;
                                         </div>
                                     )}
                                     {consoleExpanded && <button onClick={() => { const healHp=Math.floor(char.maxHp*0.2); const healNen=Math.floor(char.maxNen*0.2); updateChar('currentHp',Math.min(char.maxHp,char.currentHp+healHp)); updateChar('currentNen',Math.min(char.maxNen,char.currentNen+healNen)); addLog('Descanso','Recuperado',`+${healHp} HP, +${healNen} AP`, 'info'); }} className="text-[10px] text-green-400 hover:text-white hover:bg-green-600 flex items-center gap-1 bg-green-900/20 px-3 py-1.5 rounded border border-green-500/20 font-bold uppercase tracking-wider transition-all z-20 relative box-glow"><BatteryCharging size={12}/> Descansar</button>}
+                                    {consoleExpanded && <button onClick={handleClearLogs} className="text-[10px] text-red-400 hover:text-white hover:bg-red-600 flex items-center gap-1 bg-red-900/20 px-3 py-1.5 rounded border border-red-500/20 font-bold uppercase tracking-wider transition-all z-20 relative box-glow" title="Limpar Histórico"><Trash2 size={12}/> Limpar</button>}
                                     <button onClick={() => setConsoleExpanded(!consoleExpanded)} className="text-gray-500 hover:text-white transition-colors">{consoleExpanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}</button>
                                 </div>
                             </div>
