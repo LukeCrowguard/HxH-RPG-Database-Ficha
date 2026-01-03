@@ -1495,19 +1495,41 @@ Cole o link da imagem aqui:`;
                                 <button onClick={() => setIsCharModalOpen(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors z-20 relative"><X size={24} className="text-gray-400 hover:text-white"/></button>
                             </div>
                             <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
-                                {characters.map(c => (
-                                    <div key={c.id} onClick={() => handleCharacterAccess(c)} className={`p-6 border cursor-pointer hover:bg-white/5 transition-all flex flex-col gap-3 relative group rounded-sm ${c.id === activeCharId ? 'border-theme bg-theme/5 shadow-[0_0_20px_rgba(155,89,182,0.1)]' : 'border-white/10'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <h3 className="font-title text-2xl text-white group-hover:text-theme transition-colors">{c.nickname}</h3>
-                                            <div className="flex items-center gap-2">{c.password && <Lock size={12} className="text-red-500"/>}{c.id === activeCharId && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_#2ecc71]"></div>}{isEditing && <button onClick={(e) => {e.stopPropagation(); handleDelete(c.id);}} className="text-gray-600 hover:text-red-500"><Trash2 size={12}/></button>}</div>
+                                {characters.map(c => {
+                                    // Logic for Censorship inside Modal
+                                    const isPublic = !c.password || c.password.trim() === "";
+                                    const isUnlocked = accessKey === c.password || accessKey === "schrodinger";
+                                    const isVisible = isPublic || isUnlocked;
+
+                                    return (
+                                        <div key={c.id} onClick={() => handleCharacterAccess(c)} className={`p-6 border cursor-pointer transition-all flex flex-col gap-3 relative group rounded-sm overflow-hidden ${c.id === activeCharId ? 'border-theme bg-theme/5 shadow-[0_0_20px_rgba(155,89,182,0.1)]' : 'border-white/10 hover:bg-white/5'} ${!isVisible ? 'hover:border-red-500/30' : ''}`}>
+                                            {!isVisible && <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0IiBoZWlnaHQ9IjQiPgo8cmVjdCB3aWR0aD0iNCIgaGVpZ2h0PSI0IiBmaWxsPSIjMDAwIiAvPgo8cmVjdCB3aWR0aD0iMSIgaGVpZ2h0PSIxIiBmaWxsPSIjMzMzIiAvPgo8L3N2Zz4=')] opacity-20 pointer-events-none z-0"></div>}
+                                            
+                                            <div className="flex justify-between items-start relative z-10">
+                                                <h3 className={`font-title text-2xl transition-colors ${isVisible ? 'text-white group-hover:text-theme' : 'text-gray-600 blur-[2px]'}`}>
+                                                    {isVisible ? c.nickname : 'REDACTED'}
+                                                </h3>
+                                                <div className="flex items-center gap-2">
+                                                    {c.password && <Lock size={12} className={isVisible ? "text-green-500" : "text-red-500"}/>}
+                                                    {c.id === activeCharId && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_#2ecc71]"></div>}
+                                                    {isEditing && isVisible && <button onClick={(e) => {e.stopPropagation(); handleDelete(c.id);}} className="text-gray-600 hover:text-red-500"><Trash2 size={12}/></button>}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="h-[1px] w-full bg-white/10 group-hover:bg-white/20 transition-colors relative z-10"></div>
+                                            
+                                            <div className="flex justify-between items-end relative z-10">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-mono text-gray-400">{isVisible ? c.name : '****** *******'}</span>
+                                                    <span className="text-[10px] text-gray-600 mt-1">{isVisible ? `Lvl ${c.hunterLevel}` : 'Lvl ??'}</span>
+                                                </div>
+                                                <span className={`text-[10px] uppercase font-bold bg-black/30 px-2 py-1 rounded tracking-widest ${isVisible ? 'text-gray-500' : 'text-gray-700'}`}>
+                                                    {isVisible ? c.nenType.split(' ')[0] : 'UNKNOWN'}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className="h-[1px] w-full bg-white/10 group-hover:bg-white/20 transition-colors"></div>
-                                        <div className="flex justify-between items-end">
-                                            <div className="flex flex-col"><span className="text-xs font-mono text-gray-400">{c.name}</span><span className="text-[10px] text-gray-600 mt-1">Lvl {c.hunterLevel}</span></div>
-                                            <span className="text-[10px] uppercase font-bold text-gray-500 bg-black/30 px-2 py-1 rounded tracking-widest">{c.nenType.split(' ')[0]}</span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 <button onClick={() => {
                                     const newChar = {...INITIAL_CHARACTER, id: generateUUID(), nickname: 'Novo Hunter', name: 'Desconhecido'};
                                     setCharacters(prev => [...prev, newChar]);
