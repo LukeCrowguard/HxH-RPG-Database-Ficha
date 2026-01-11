@@ -377,7 +377,8 @@
       // --- SUB-COMPONENTS ---
 
       const StatBar = ({ label, current, max, color, icon, isEditing, onChange, onMaxChange, onOpenCalculator }) => {
-        const percentage = Math.min(100, Math.max(0, (current / max) * 100));
+        // Fix: Defense against divide by zero or negative max
+        const percentage = max > 0 ? Math.min(100, Math.max(0, (current / max) * 100)) : 0;
         return (
             <div className="flex flex-col w-full mb-4 group relative z-10">
                 <div className="flex justify-between items-end mb-2">
@@ -1206,6 +1207,63 @@ Cole o link da imagem aqui:`;
                                         </div>
                                     )}
 
+                                    {/* HADES REVIVAL PANEL (SAFE MODE) */}
+                                    {char.hasRevivalProtocol && char.currentHp === 0 && (
+                                        <div className="mb-6 bg-red-900/20 border border-red-500/50 p-4 rounded relative overflow-hidden animate-pulse-slow">
+                                            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiBmaWxsPSJyZWQiIG9wYWNpdHk9IjAuMSI+PHBhdGggZD0iTTUwLDIwIEw4MCw4MCBMMjAsODAgWiIvPjwvc3ZnPg==')] opacity-10 bg-repeat bg-[length:20px_20px]"></div>
+                                            <div className="relative z-10 flex flex-col items-center text-center">
+                                                <h3 className="text-red-500 font-title text-xl mb-1 flex items-center gap-2 drop-shadow-md">
+                                                    <Skull size={20} className="animate-pulse"/> PROTOCOLO LÁZARO ATIVO
+                                                </h3>
+                                                <p className="text-xs text-red-300 font-mono mb-3 uppercase tracking-wider">SISTEMA VITAL EM REINICIALIZAÇÃO...</p>
+                                                
+                                                {/* Countdown Logic (Defensive) */}
+                                                {(() => {
+                                                    const conditions = char.conditions || [];
+                                                    const deathConditionIndex = conditions.findIndex(c => c && c.startsWith('Morto ('));
+                                                    
+                                                    if (deathConditionIndex !== -1) {
+                                                        const match = conditions[deathConditionIndex].match(/(\d+)/);
+                                                        const turns = match ? parseInt(match[0]) : 0;
+                                                        
+                                                        return (
+                                                            <div className="flex flex-col items-center gap-2">
+                                                                <div className="text-5xl font-mono font-bold text-white drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]">{turns}</div>
+                                                                <span className="text-[10px] uppercase tracking-[0.2em] text-red-400 font-bold">Turnos Restantes</span>
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        const currentConds = char.conditions || [];
+                                                                        if(turns > 1) {
+                                                                            const newConds = [...currentConds];
+                                                                            // Re-find index just to be safe in async event
+                                                                            const idx = newConds.findIndex(c => c && c.startsWith('Morto ('));
+                                                                            if(idx !== -1) {
+                                                                                newConds[idx] = `Morto (${turns-1} turnos)`;
+                                                                                updateChar('conditions', newConds);
+                                                                                addLog('Lázaro', turns-1, 'Contagem regressiva...', 'fail');
+                                                                            }
+                                                                        } else {
+                                                                            // Revive logic
+                                                                            const newConds = currentConds.filter(c => c && !c.startsWith('Morto ('));
+                                                                            updateChar('conditions', newConds);
+                                                                            updateChar('currentHp', char.maxHp); 
+                                                                            addLog('💀 Protocolo Submundo', 'REVIVIDO', 'Sistema vital restaurado com sucesso.', 'crit');
+                                                                        }
+                                                                    }}
+                                                                    className="mt-2 px-6 py-2 bg-red-600/20 hover:bg-red-600 text-red-200 hover:text-white border border-red-500/50 text-xs font-bold rounded uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(220,38,38,0.2)] hover:shadow-[0_0_20px_rgba(220,38,38,0.6)] active:scale-95"
+                                                                >
+                                                                    Passar Turno (-1)
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    } else {
+                                                        return <span className="text-xs text-gray-500 italic">Contagem perdida. Adicione 'Morto (X turnos)' nos status manualmente.</span>
+                                                    }
+                                                })()}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <StatBar 
                                         label="Vitalidade (HP)" 
                                         current={char.currentHp} 
@@ -1216,13 +1274,14 @@ Cole o link da imagem aqui:`;
                                         onChange={v => {
                                             const wasAlive = char.currentHp > 0;
                                             updateChar('currentHp', v);
-                                            // Hades Revival Logic (Triggered if Module is Active and HP hits 0 from positive)
+                                            // Hades Revival Logic (Defensive)
                                             if (v === 0 && wasAlive && char.hasRevivalProtocol) {
                                                 const r = rollDice('2d2+1');
                                                 addLog('💀 Protocolo Submundo', r.total, `Sistema vital colapsou. Reinicialização em ${r.total} turnos.`, 'fail');
+                                                const currentConds = char.conditions || [];
                                                 const newCond = `Morto (${r.total} turnos)`;
-                                                if (!char.conditions.includes(newCond)) {
-                                                    updateChar('conditions', [...(char.conditions || []), newCond]);
+                                                if (!currentConds.includes(newCond)) {
+                                                    updateChar('conditions', [...currentConds, newCond]);
                                                 }
                                             }
                                         }} 
@@ -1271,8 +1330,8 @@ Cole o link da imagem aqui:`;
                                             <span className="text-[10px] font-tech text-gray-500 uppercase tracking-widest flex items-center gap-2"><AlertCircle size={12}/> Status Atuais</span>
                                             {isEditing && (
                                                 <div className="flex items-center gap-1 relative z-20">
-                                                    <input value={conditionInput} onChange={e => setConditionInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && conditionInput) { updateChar('conditions', [...char.conditions, conditionInput]); setConditionInput(""); }}} placeholder="Add..." className="bg-black/50 border border-white/10 text-[10px] text-white px-2 py-1 w-20 outline-none rounded"/>
-                                                    <button onClick={() => { if(conditionInput) { updateChar('conditions', [...char.conditions, conditionInput]); setConditionInput(""); }}} className="bg-theme text-[10px] text-white px-2 py-1 rounded hover:bg-white hover:text-black transition-colors font-bold">+</button>
+                                                    <input value={conditionInput} onChange={e => setConditionInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && conditionInput) { updateChar('conditions', [...(char.conditions||[]), conditionInput]); setConditionInput(""); }}} placeholder="Add..." className="bg-black/50 border border-white/10 text-[10px] text-white px-2 py-1 w-20 outline-none rounded"/>
+                                                    <button onClick={() => { if(conditionInput) { updateChar('conditions', [...(char.conditions||[]), conditionInput]); setConditionInput(""); }}} className="bg-theme text-[10px] text-white px-2 py-1 rounded hover:bg-white hover:text-black transition-colors font-bold">+</button>
                                                 </div>
                                             )}
                                         </div>
@@ -1280,7 +1339,7 @@ Cole o link da imagem aqui:`;
                                             {(char.conditions || []).map((cond, idx) => (
                                                 <span key={idx} className="text-[10px] font-bold px-3 py-1 bg-red-500/10 text-red-200 border border-red-500/20 rounded-full flex items-center gap-2">
                                                     {cond}
-                                                    {isEditing && <button onClick={() => updateChar('conditions', char.conditions.filter((_, i) => i !== idx))} className="hover:text-white"><X size={10}/></button>}
+                                                    {isEditing && <button onClick={() => updateChar('conditions', (char.conditions||[]).filter((_, i) => i !== idx))} className="hover:text-white"><X size={10}/></button>}
                                                 </span>
                                             ))}
                                         </div>
